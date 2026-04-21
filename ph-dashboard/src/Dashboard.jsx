@@ -97,6 +97,10 @@ const fmt = (v, dec = 0) =>
   v == null
     ? "—"
     : `£${Number(v).toLocaleString("en-GB", { minimumFractionDigits: dec, maximumFractionDigits: dec })}`;
+const fmtTxn = (v, dec = 0) =>
+  v == null
+    ? "—"
+    : Number(v).toLocaleString("en-GB", { minimumFractionDigits: dec, maximumFractionDigits: dec });
 const fmtPct = (v) =>
   v == null || isNaN(v) ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`;
 const growthColor = (v) =>
@@ -305,12 +309,12 @@ function MultiSelect({ label, selected, onChange, opts, format }) {
 }
 
 // ─── Channel Mix Bar ─────────────────────────────────────────────────────────
-function ChannelMixBar({ data }) {
+function ChannelMixBar({ data, metricMode = "sales" }) {
   const [hovered, setHovered] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const total = data.reduce((s, d) => s + d.cy, 0);
   if (!total)
-    return <span style={{ color: C.muted, fontSize: 12 }}>No CY sales</span>;
+    return <span style={{ color: C.muted, fontSize: 12 }}>No CY {metricMode === "transactions" ? "transactions" : "sales"}</span>;
   const filtered = data.filter((d) => d.cy > 0).sort((a, b) => b.cy - a.cy);
   return (
     <div style={{ position: "relative" }}>
@@ -435,7 +439,7 @@ function ChannelMixBar({ data }) {
                     fontFamily: "'DM Mono', monospace",
                   }}
                 >
-                  {fmt(d.cy)}
+                  {metricMode === "transactions" ? fmtTxn(d.cy) : fmt(d.cy)}
                 </span>
               </div>
             );
@@ -447,7 +451,7 @@ function ChannelMixBar({ data }) {
 }
 
 // ─── Box Plot Chart ──────────────────────────────────────────────────────────
-function BoxPlotChart({ data, height = 400 }) {
+function BoxPlotChart({ data, height = 400, metricMode = "sales" }) {
   const [tooltip, setTooltip] = useState(null);
   const containerRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(900);
@@ -525,7 +529,7 @@ function BoxPlotChart({ data, height = 400 }) {
               fontSize={10}
               fontFamily="'DM Mono', monospace"
             >
-              £{(v / 1000).toFixed(0)}k
+              {metricMode === "transactions" ? "" : "£"}{(v / 1000).toFixed(0)}k
             </text>
           </g>
         ))}
@@ -752,20 +756,20 @@ function BoxPlotChart({ data, height = 400 }) {
             <span style={{ color: C.teal, fontWeight: 600 }}>CY</span>
             <span style={{ color: C.muted, fontWeight: 600 }}>PY1</span>
             <span style={{ color: C.textSub }}>P90</span>
-            <span>{fmt(tooltip.d.cy_p90)}</span>
-            <span>{fmt(tooltip.d.py_p90)}</span>
+            <span>{(metricMode === "transactions" ? fmtTxn : fmt)(tooltip.d.cy_p90)}</span>
+            <span>{(metricMode === "transactions" ? fmtTxn : fmt)(tooltip.d.py_p90)}</span>
             <span style={{ color: C.textSub }}>P75</span>
-            <span>{fmt(tooltip.d.cy_p75)}</span>
-            <span>{fmt(tooltip.d.py_p75)}</span>
+            <span>{(metricMode === "transactions" ? fmtTxn : fmt)(tooltip.d.cy_p75)}</span>
+            <span>{(metricMode === "transactions" ? fmtTxn : fmt)(tooltip.d.py_p75)}</span>
             <span style={{ color: C.textSub }}>Med</span>
-            <span style={{ fontWeight: 700 }}>{fmt(tooltip.d.cy_median)}</span>
-            <span style={{ fontWeight: 700 }}>{fmt(tooltip.d.py_median)}</span>
+            <span style={{ fontWeight: 700 }}>{(metricMode === "transactions" ? fmtTxn : fmt)(tooltip.d.cy_median)}</span>
+            <span style={{ fontWeight: 700 }}>{(metricMode === "transactions" ? fmtTxn : fmt)(tooltip.d.py_median)}</span>
             <span style={{ color: C.textSub }}>P25</span>
-            <span>{fmt(tooltip.d.cy_p25)}</span>
-            <span>{fmt(tooltip.d.py_p25)}</span>
+            <span>{(metricMode === "transactions" ? fmtTxn : fmt)(tooltip.d.cy_p25)}</span>
+            <span>{(metricMode === "transactions" ? fmtTxn : fmt)(tooltip.d.py_p25)}</span>
             <span style={{ color: C.textSub }}>P10</span>
-            <span>{fmt(tooltip.d.cy_p10)}</span>
-            <span>{fmt(tooltip.d.py_p10)}</span>
+            <span>{(metricMode === "transactions" ? fmtTxn : fmt)(tooltip.d.cy_p10)}</span>
+            <span>{(metricMode === "transactions" ? fmtTxn : fmt)(tooltip.d.py_p10)}</span>
           </div>
         </div>
       )}
@@ -782,6 +786,9 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [fileName, setFileName] = useState(null);
+
+  // Metric mode
+  const [metricMode, setMetricMode] = useState("sales"); // sales | transactions
 
   // Filters
   const [view, setView] = useState("overview"); // overview | stores | franchisees | opportunities
@@ -878,7 +885,10 @@ export default function Dashboard() {
             DAY_PART,
             TRY_CAST(CY_NET_SALES_BASE AS DOUBLE) AS CY,
             TRY_CAST(PY_1_NET_SALES_BASE AS DOUBLE) AS PY1,
-            TRY_CAST(PY_2_NET_SALES_BASE AS DOUBLE) AS PY2
+            TRY_CAST(PY_2_NET_SALES_BASE AS DOUBLE) AS PY2,
+            TRY_CAST(CY_TRANSACTION_CNT AS DOUBLE) AS TXN_CY,
+            TRY_CAST(PY_1_TRANSACTION_CNT AS DOUBLE) AS TXN_PY1,
+            TRY_CAST(PY_2_TRANSACTION_CNT AS DOUBLE) AS TXN_PY2
           FROM read_csv_auto('sales.csv', header=true)
         ),
         latest_franchise AS (
@@ -892,7 +902,8 @@ export default function Dashboard() {
         )
         SELECT r.BUSINESS_DATE, r.DAYNAME, r.STORE_ID, r.STORE_NAME,
           lf.FRANCHISE, r.POSTAL_CODE, r.AIS_STORE_STATUS,
-          r.CHANNEL, r.CHANNEL_TYPE, r.DAY_PART, r.CY, r.PY1, r.PY2
+          r.CHANNEL, r.CHANNEL_TYPE, r.DAY_PART, r.CY, r.PY1, r.PY2,
+          r.TXN_CY, r.TXN_PY1, r.TXN_PY2
         FROM raw r
         JOIN latest_franchise lf ON r.STORE_ID = lf.STORE_ID
       `);
@@ -1048,6 +1059,9 @@ export default function Dashboard() {
     let cancelled = false;
 
     (async () => {
+      const cy = metricMode === "transactions" ? "TXN_CY" : "CY";
+      const py1 = metricMode === "transactions" ? "TXN_PY1" : "PY1";
+      const py2 = metricMode === "transactions" ? "TXN_PY2" : "PY2";
       const w = buildWhere(
         filterFranchise,
         filterChannel,
@@ -1072,7 +1086,7 @@ export default function Dashboard() {
             COUNT(CASE WHEN cy < py1 AND py1 > 0 THEN 1 END) AS declining_stores,
             COUNT(CASE WHEN cy > py1 AND py1 > 0 THEN 1 END) AS growing_stores
           FROM (
-            SELECT STORE_ID, FRANCHISE, SUM(CY) AS cy, SUM(PY1) AS py1, SUM(PY2) AS py2
+            SELECT STORE_ID, FRANCHISE, SUM(${cy}) AS cy, SUM(${py1}) AS py1, SUM(${py2}) AS py2
             FROM sales ${w} GROUP BY STORE_ID, FRANCHISE
           ) agg`);
         if (cancelled) return;
@@ -1097,13 +1111,13 @@ export default function Dashboard() {
         setBusinessTypes(btlist.map((r) => r.CHANNEL_TYPE));
 
         const cdata = await runQ(
-          `SELECT CHANNEL, SUM(CY) AS cy, SUM(PY1) AS py1, SUM(PY2) AS py2 FROM sales ${w} GROUP BY CHANNEL ORDER BY cy DESC`,
+          `SELECT CHANNEL, SUM(${cy}) AS cy, SUM(${py1}) AS py1, SUM(${py2}) AS py2 FROM sales ${w} GROUP BY CHANNEL ORDER BY cy DESC`,
         );
         if (cancelled) return;
         setChannelData(cdata);
 
         const dp = await runQ(
-          `SELECT DAY_PART, SUM(CY) AS cy, SUM(PY1) AS py1, SUM(PY2) AS py2 FROM sales ${w} GROUP BY DAY_PART`,
+          `SELECT DAY_PART, SUM(${cy}) AS cy, SUM(${py1}) AS py1, SUM(${py2}) AS py2 FROM sales ${w} GROUP BY DAY_PART`,
         );
         if (cancelled) return;
         setDaypartData(
@@ -1120,16 +1134,16 @@ export default function Dashboard() {
 
         const stores = await runQ(`
           SELECT STORE_ID, STORE_NAME, FRANCHISE, AIS_STORE_STATUS, MODE(CHANNEL_TYPE) AS CHANNEL_TYPE,
-            SUM(CY) AS cy, SUM(PY1) AS py1, SUM(PY2) AS py2,
-            CASE WHEN SUM(PY1)>0 THEN ((SUM(CY)-SUM(PY1))/SUM(PY1))*100 ELSE NULL END AS growth_py1,
-            CASE WHEN SUM(PY2)>0 THEN ((SUM(CY)-SUM(PY2))/SUM(PY2))*100 ELSE NULL END AS growth_py2
+            SUM(${cy}) AS cy, SUM(${py1}) AS py1, SUM(${py2}) AS py2,
+            CASE WHEN SUM(${py1})>0 THEN ((SUM(${cy})-SUM(${py1}))/SUM(${py1}))*100 ELSE NULL END AS growth_py1,
+            CASE WHEN SUM(${py2})>0 THEN ((SUM(${cy})-SUM(${py2}))/SUM(${py2}))*100 ELSE NULL END AS growth_py2
           FROM sales ${w}
           GROUP BY STORE_ID, STORE_NAME, FRANCHISE, AIS_STORE_STATUS`);
         if (cancelled) return;
         setStoreRows(stores);
 
         const storeChannels = await runQ(
-          `SELECT STORE_ID, CHANNEL, SUM(CY) AS cy FROM sales ${w} GROUP BY STORE_ID, CHANNEL`,
+          `SELECT STORE_ID, CHANNEL, SUM(${cy}) AS cy FROM sales ${w} GROUP BY STORE_ID, CHANNEL`,
         );
         if (cancelled) return;
         const scMap = {};
@@ -1150,7 +1164,7 @@ export default function Dashboard() {
         );
         const franchisees = await runQ(`
           WITH store_agg AS (
-            SELECT FRANCHISE, STORE_ID, SUM(CY) AS cy, SUM(PY1) AS py1, SUM(PY2) AS py2
+            SELECT FRANCHISE, STORE_ID, SUM(${cy}) AS cy, SUM(${py1}) AS py1, SUM(${py2}) AS py2
             FROM sales ${wf}
             GROUP BY FRANCHISE, STORE_ID
           )
@@ -1169,8 +1183,8 @@ export default function Dashboard() {
         const geoStores = await runQ(`
           SELECT STORE_ID, STORE_NAME, FRANCHISE,
             MODE(POSTAL_CODE) AS POSTAL_CODE,
-            SUM(CY) AS cy, SUM(PY1) AS py1,
-            CASE WHEN SUM(PY1)>0 THEN ((SUM(CY)-SUM(PY1))/SUM(PY1))*100 ELSE NULL END AS growth_pct
+            SUM(${cy}) AS cy, SUM(${py1}) AS py1,
+            CASE WHEN SUM(${py1})>0 THEN ((SUM(${cy})-SUM(${py1}))/SUM(${py1}))*100 ELSE NULL END AS growth_pct
           FROM sales ${w}
           GROUP BY STORE_ID, STORE_NAME, FRANCHISE
           HAVING MODE(POSTAL_CODE) IS NOT NULL`);
@@ -1181,7 +1195,7 @@ export default function Dashboard() {
         const weekly = await runQ(`
           WITH store_weeks AS (
             SELECT DATE_TRUNC('week', BUSINESS_DATE) AS week_start, STORE_ID,
-              SUM(CY) AS cy, SUM(PY1) AS py1
+              SUM(${cy}) AS cy, SUM(${py1}) AS py1
             FROM sales ${w}
             GROUP BY week_start, STORE_ID
           ),
@@ -1215,8 +1229,8 @@ export default function Dashboard() {
 
         const heatmap = await runQ(`
           SELECT DAYNAME, DAY_PART,
-            SUM(CY) AS cy, SUM(PY1) AS py1,
-            CASE WHEN SUM(PY1)>0 THEN ((SUM(CY)-SUM(PY1))/SUM(PY1))*100 ELSE NULL END AS growth_py1
+            SUM(${cy}) AS cy, SUM(${py1}) AS py1,
+            CASE WHEN SUM(${py1})>0 THEN ((SUM(${cy})-SUM(${py1}))/SUM(${py1}))*100 ELSE NULL END AS growth_py1
           FROM sales ${w}
           GROUP BY DAYNAME, DAY_PART`);
         if (cancelled) return;
@@ -1234,6 +1248,7 @@ export default function Dashboard() {
     conn,
     dbReady,
     runQ,
+    metricMode,
     filterFranchise,
     filterChannel,
     filterDaypart,
@@ -1246,12 +1261,14 @@ export default function Dashboard() {
   const fetchStoreDetail = useCallback(
     async (storeId) => {
       if (!conn || !dbReady) return null;
+      const cy = metricMode === "transactions" ? "TXN_CY" : "CY";
+      const py1 = metricMode === "transactions" ? "TXN_PY1" : "PY1";
       const channelBreakdown = await runQ(`
-      SELECT CHANNEL, SUM(CY) AS cy, SUM(PY1) AS py1
+      SELECT CHANNEL, SUM(${cy}) AS cy, SUM(${py1}) AS py1
       FROM sales WHERE STORE_ID='${storeId}' GROUP BY CHANNEL ORDER BY cy DESC
     `);
       const daypartBreakdown = await runQ(`
-      SELECT DAY_PART, SUM(CY) AS cy, SUM(PY1) AS py1
+      SELECT DAY_PART, SUM(${cy}) AS cy, SUM(${py1}) AS py1
       FROM sales WHERE STORE_ID='${storeId}' GROUP BY DAY_PART
     `);
       const dpOrdered = DAYPART_ORDER.map(
@@ -1264,7 +1281,7 @@ export default function Dashboard() {
       );
       return { channelBreakdown, daypartBreakdown: dpOrdered };
     },
-    [conn, dbReady, runQ],
+    [conn, dbReady, runQ, metricMode],
   );
 
   useEffect(() => {
@@ -1389,6 +1406,10 @@ export default function Dashboard() {
       </div>
     );
   }
+
+  // ── Metric helpers ─────────────────────────────────────────────────────────
+  const metricLabel = metricMode === "transactions" ? "Transactions" : "Sales";
+  const fmtVal = metricMode === "transactions" ? fmtTxn : fmt;
 
   // ── Main Dashboard ─────────────────────────────────────────────────────────
   const navItems = [
@@ -1734,6 +1755,43 @@ export default function Dashboard() {
               Querying…
             </span>
           )}
+          <div
+            style={{
+              marginLeft: "auto",
+              display: "flex",
+              background: C.card,
+              border: `1px solid ${C.border}`,
+              borderRadius: 6,
+              padding: 3,
+              gap: 3,
+            }}
+          >
+            {[
+              { mode: "sales", label: "£ Sales" },
+              { mode: "transactions", label: "# Txns" },
+            ].map(({ mode, label }) => (
+              <button
+                key={mode}
+                onClick={() => setMetricMode(mode)}
+                style={{
+                  background: metricMode === mode ? C.accent : "transparent",
+                  color: metricMode === mode ? "#fff" : C.muted,
+                  border: "none",
+                  borderRadius: 4,
+                  padding: "4px 12px",
+                  cursor: "pointer",
+                  fontSize: 11,
+                  fontFamily: "'DM Mono', monospace",
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  transition: "all 0.15s",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -1750,9 +1808,9 @@ export default function Dashboard() {
               }}
             >
               <KPI
-                label="Total CY Sales"
-                value={fmt(kpis.total_cy)}
-                sub={`PY1: ${fmt(kpis.total_py1)}`}
+                label={`Total CY ${metricLabel}`}
+                value={fmtVal(kpis.total_cy)}
+                sub={`PY1: ${fmtVal(kpis.total_py1)}`}
                 color={C.teal}
               />
               <KPI
@@ -1812,7 +1870,7 @@ export default function Dashboard() {
                 }}
               >
                 <SectionHeader
-                  title="Sales by Channel"
+                  title={`${metricLabel} by Channel`}
                   subtitle="CY vs PY1 vs PY2"
                 />
                 <ResponsiveContainer width="100%" height={240}>
@@ -1835,7 +1893,7 @@ export default function Dashboard() {
                     />
                     <YAxis
                       tick={{ fill: C.muted, fontSize: 10 }}
-                      tickFormatter={(v) => `£${(v / 1000).toFixed(0)}k`}
+                      tickFormatter={(v) => `${metricMode === "transactions" ? "" : "£"}${(v / 1000).toFixed(0)}k`}
                     />
                     <Tooltip
                       contentStyle={{
@@ -1845,7 +1903,7 @@ export default function Dashboard() {
                         fontFamily: "'DM Mono', monospace",
                         fontSize: 12,
                       }}
-                      formatter={(v, n) => [fmt(v, 2), n]}
+                      formatter={(v, n) => [fmtVal(v, 2), n]}
                     />
                     <Legend wrapperStyle={{ fontSize: 11, color: C.textSub }} />
                     <Bar
@@ -1879,7 +1937,7 @@ export default function Dashboard() {
                   padding: 20,
                 }}
               >
-                <SectionHeader title="Sales by Daypart" subtitle="CY vs PY1" />
+                <SectionHeader title={`${metricLabel} by Daypart`} subtitle="CY vs PY1" />
                 <ResponsiveContainer width="100%" height={240}>
                   <BarChart
                     data={daypartData}
@@ -1900,7 +1958,7 @@ export default function Dashboard() {
                     />
                     <YAxis
                       tick={{ fill: C.muted, fontSize: 10 }}
-                      tickFormatter={(v) => `£${(v / 1000).toFixed(0)}k`}
+                      tickFormatter={(v) => `${metricMode === "transactions" ? "" : "£"}${(v / 1000).toFixed(0)}k`}
                     />
                     <Tooltip
                       contentStyle={{
@@ -1910,7 +1968,7 @@ export default function Dashboard() {
                         fontFamily: "'DM Mono', monospace",
                         fontSize: 12,
                       }}
-                      formatter={(v, n) => [fmt(v, 2), n]}
+                      formatter={(v, n) => [fmtVal(v, 2), n]}
                     />
                     <Legend wrapperStyle={{ fontSize: 11, color: C.textSub }} />
                     <Bar
@@ -1946,7 +2004,7 @@ export default function Dashboard() {
                   padding: 20,
                 }}
               >
-                <SectionHeader title="🏆 Top 10 Stores by CY Sales" />
+                <SectionHeader title={`🏆 Top 10 Stores by CY ${metricLabel}`} />
                 <table
                   style={{
                     width: "100%",
@@ -1993,7 +2051,7 @@ export default function Dashboard() {
                               fontFamily: "'DM Mono', monospace",
                             }}
                           >
-                            {fmt(s.cy, 2)}
+                            {fmtVal(s.cy, 2)}
                           </td>
                           <td>
                             <GrowthPill cy={s.cy} py={s.py1} />
@@ -2054,7 +2112,7 @@ export default function Dashboard() {
                             color: C.muted,
                           }}
                         >
-                          {fmt(s.cy, 2)}
+                          {fmtVal(s.cy, 2)}
                         </td>
                         <td
                           style={{
@@ -2062,7 +2120,7 @@ export default function Dashboard() {
                             color: C.muted,
                           }}
                         >
-                          {fmt(s.py1, 2)}
+                          {fmtVal(s.py1, 2)}
                         </td>
                         <td>
                           <GrowthPill cy={s.cy} py={s.py1} />
@@ -2093,9 +2151,9 @@ export default function Dashboard() {
               />
               <div style={{ display: "flex", gap: 8 }}>
                 {[
-                  ["cy", "CY Sales"],
+                  ["cy", `CY ${metricLabel}`],
                   ["growth_py1", "vs PY1 %"],
-                  ["py1", "PY1 Sales"],
+                  ["py1", `PY1 ${metricLabel}`],
                 ].map(([f, l]) => (
                   <button
                     key={f}
@@ -2154,9 +2212,9 @@ export default function Dashboard() {
                       "Franchise",
                       "Type",
                       "Status",
-                      "CY Sales",
-                      "PY1 Sales",
-                      "PY2 Sales",
+                      `CY ${metricLabel}`,
+                      `PY1 ${metricLabel}`,
+                      `PY2 ${metricLabel}`,
                       "vs PY1",
                       "vs PY2",
                       "Channel Mix",
@@ -2238,7 +2296,7 @@ export default function Dashboard() {
                           color: C.teal,
                         }}
                       >
-                        {fmt(s.cy, 2)}
+                        {fmtVal(s.cy, 2)}
                       </td>
                       <td
                         style={{
@@ -2247,7 +2305,7 @@ export default function Dashboard() {
                           color: C.muted,
                         }}
                       >
-                        {fmt(s.py1, 2)}
+                        {fmtVal(s.py1, 2)}
                       </td>
                       <td
                         style={{
@@ -2256,7 +2314,7 @@ export default function Dashboard() {
                           color: C.muted,
                         }}
                       >
-                        {fmt(s.py2, 2)}
+                        {fmtVal(s.py2, 2)}
                       </td>
                       <td style={{ padding: "9px 12px" }}>
                         <GrowthPill cy={s.cy} py={s.py1} />
@@ -2267,6 +2325,7 @@ export default function Dashboard() {
                       <td style={{ padding: "9px 12px", minWidth: 100 }}>
                         <ChannelMixBar
                           data={storeChannelMap[s.STORE_ID] || []}
+                          metricMode={metricMode}
                         />
                       </td>
                     </tr>
@@ -2341,12 +2400,12 @@ export default function Dashboard() {
                 </div>
                 <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
                   <KPI
-                    label="CY Sales"
-                    value={fmt(selectedStore.cy, 2)}
+                    label={`CY ${metricLabel}`}
+                    value={fmtVal(selectedStore.cy, 2)}
                     color={C.teal}
                   />
-                  <KPI label="PY1 Sales" value={fmt(selectedStore.py1, 2)} />
-                  <KPI label="PY2 Sales" value={fmt(selectedStore.py2, 2)} />
+                  <KPI label={`PY1 ${metricLabel}`} value={fmtVal(selectedStore.py1, 2)} />
+                  <KPI label={`PY2 ${metricLabel}`} value={fmtVal(selectedStore.py2, 2)} />
                   <KPI
                     label="vs PY1"
                     value={fmtPct(selectedStore.growth_py1)}
@@ -2395,7 +2454,7 @@ export default function Dashboard() {
                             border: `1px solid ${C.border}`,
                             fontSize: 11,
                           }}
-                          formatter={(v) => fmt(v, 2)}
+                          formatter={(v) => fmtVal(v, 2)}
                         />
                         <Bar
                           dataKey="cy"
@@ -2443,7 +2502,7 @@ export default function Dashboard() {
                             border: `1px solid ${C.border}`,
                             fontSize: 11,
                           }}
-                          formatter={(v) => fmt(v, 2)}
+                          formatter={(v) => fmtVal(v, 2)}
                         />
                         <Bar
                           dataKey="cy"
@@ -2529,7 +2588,7 @@ export default function Dashboard() {
                             letterSpacing: "0.06em",
                           }}
                         >
-                          CY Sales
+                          CY {metricLabel}
                         </div>
                         <div
                           style={{
@@ -2538,7 +2597,7 @@ export default function Dashboard() {
                             fontFamily: "'DM Mono', monospace",
                           }}
                         >
-                          {fmt(f.cy, 2)}
+                          {fmtVal(f.cy, 2)}
                         </div>
                       </div>
                       <div>
@@ -2647,7 +2706,7 @@ export default function Dashboard() {
                   />
                 </div>
                 <p style={{ color: C.muted, fontSize: 12, marginBottom: 14 }}>
-                  CY sales below prior year — investigate root cause
+                  CY {metricLabel.toLowerCase()} below prior year — investigate root cause
                 </p>
                 <div>
                   {decliningStores.slice(0, 10).map((s) => (
@@ -2679,7 +2738,7 @@ export default function Dashboard() {
                             marginTop: 2,
                           }}
                         >
-                          {fmt(s.cy, 2)} vs {fmt(s.py1, 2)}
+                          {fmtVal(s.cy, 2)} vs {fmtVal(s.py1, 2)}
                         </div>
                       </div>
                     </div>
@@ -2746,7 +2805,7 @@ export default function Dashboard() {
                             marginTop: 2,
                           }}
                         >
-                          {fmt(s.cy, 2)} vs {fmt(s.py1, 2)}
+                          {fmtVal(s.cy, 2)} vs {fmtVal(s.py1, 2)}
                         </div>
                       </div>
                     </div>
@@ -2806,7 +2865,7 @@ export default function Dashboard() {
                           fontSize: 13,
                         }}
                       >
-                        {fmt(s.cy, 2)}
+                        {fmtVal(s.cy, 2)}
                       </div>
                       <div style={{ color: C.muted, fontSize: 11 }}>
                         {s.FRANCHISE}
@@ -2824,7 +2883,7 @@ export default function Dashboard() {
           <div>
             <SectionHeader
               title="Weekly Store Performance Distribution"
-              subtitle="Box plots showing CY vs PY1 store sales distribution per week (P10–P90)"
+              subtitle={`Box plots showing CY vs PY1 store ${metricLabel.toLowerCase()} distribution per week (P10–P90)`}
             />
             {weeklyData.length > 0 &&
               (() => {
@@ -2849,11 +2908,11 @@ export default function Dashboard() {
                   >
                     <KPI label="Weeks" value={totalWeeks} />
                     <KPI
-                      label="Avg Median CY"
-                      value={fmt(avgCyMedian)}
+                      label={`Avg Median CY ${metricLabel}`}
+                      value={fmtVal(avgCyMedian)}
                       color={C.teal}
                     />
-                    <KPI label="Avg Median PY1" value={fmt(avgPyMedian)} />
+                    <KPI label={`Avg Median PY1 ${metricLabel}`} value={fmtVal(avgPyMedian)} />
                     <KPI
                       label="CY > PY1 Weeks"
                       value={`${cyWins} / ${totalWeeks}`}
@@ -2863,7 +2922,7 @@ export default function Dashboard() {
                   </div>
                 );
               })()}
-            <BoxPlotChart data={weeklyData} height={420} />
+            <BoxPlotChart data={weeklyData} height={420} metricMode={metricMode} />
             {weeklyData.length > 0 && (
               <div
                 style={{
@@ -2949,7 +3008,7 @@ export default function Dashboard() {
                               fontFamily: "'DM Mono', monospace",
                             }}
                           >
-                            {fmt(d.cy_median)}
+                            {fmtVal(d.cy_median)}
                           </td>
                           <td
                             style={{
@@ -2958,7 +3017,7 @@ export default function Dashboard() {
                               fontFamily: "'DM Mono', monospace",
                             }}
                           >
-                            {fmt(d.cy_p25)} – {fmt(d.cy_p75)}
+                            {fmtVal(d.cy_p25)} – {fmtVal(d.cy_p75)}
                           </td>
                           <td
                             style={{
@@ -2966,7 +3025,7 @@ export default function Dashboard() {
                               fontFamily: "'DM Mono', monospace",
                             }}
                           >
-                            {fmt(d.py_median)}
+                            {fmtVal(d.py_median)}
                           </td>
                           <td
                             style={{
@@ -2975,7 +3034,7 @@ export default function Dashboard() {
                               fontFamily: "'DM Mono', monospace",
                             }}
                           >
-                            {fmt(d.py_p25)} – {fmt(d.py_p75)}
+                            {fmtVal(d.py_p25)} – {fmtVal(d.py_p75)}
                           </td>
                           <td style={{ padding: "7px 12px" }}>
                             <GrowthPill cy={d.cy_median} py={d.py_median} />
@@ -3056,7 +3115,7 @@ export default function Dashboard() {
                     Daypart Heatmap
                   </div>
                   <div style={{ fontSize: 13, color: C.muted }}>
-                    CY sales, vs PY1 % and £ variance by day and daypart
+                    CY {metricLabel.toLowerCase()}, vs PY1 % and {metricMode === "transactions" ? "" : "£"}variance by day and daypart
                   </div>
                 </div>
 
@@ -3193,7 +3252,7 @@ export default function Dashboard() {
                                     }}
                                   >
                                     {cy > 0
-                                      ? `£${(cy / 1000).toFixed(1)}k`
+                                      ? `${metricMode === "transactions" ? "" : "£"}${(cy / 1000).toFixed(1)}k`
                                       : "—"}
                                   </div>
                                   <div
@@ -3215,7 +3274,7 @@ export default function Dashboard() {
                                     }}
                                   >
                                     {diff !== 0
-                                      ? `${diff >= 0 ? "+" : ""}£${(diff / 1000).toFixed(1)}k`
+                                      ? `${diff >= 0 ? "+" : ""}${metricMode === "transactions" ? "" : "£"}${(Math.abs(diff) / 1000).toFixed(1)}k`
                                       : "—"}
                                   </div>
                                 </div>
@@ -3345,7 +3404,7 @@ export default function Dashboard() {
                             <br />
                             {s.FRANCHISE}
                             <br />
-                            CY: {fmt(s.cy, 2)} | PY1: {fmt(s.py1, 2)}
+                            CY: {fmtVal(s.cy, 2)} | PY1: {fmtVal(s.py1, 2)}
                             <br />
                             Growth:{" "}
                             {s.growth_pct != null
