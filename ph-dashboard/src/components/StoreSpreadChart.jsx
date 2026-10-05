@@ -5,6 +5,17 @@ import { fmtPct, growthColor, metricHelpers } from "../lib/format";
 const WIDE_STEP = 14; // px per store in "wide" mode, enough for a rotated name
 const MAX_LABEL = 24;
 
+// Share of stores at each end allowed to run off the y-axis, so one or two
+// extreme stores (e.g. almost no PY sales after a refit) can't flatten the rest
+const OFF_SCALE_SHARE = 0.01;
+
+const quantile = (vals, q) => {
+  const s = [...vals].sort((a, b) => a - b);
+  const i = (s.length - 1) * q;
+  const lo = Math.floor(i);
+  return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo);
+};
+
 // Round a raw tick interval up to 1, 2, 2.5 or 5 × 10^k
 function niceStep(raw) {
   const pow = 10 ** Math.floor(Math.log10(raw));
@@ -48,23 +59,39 @@ export default function StoreSpreadChart({
       : containerWidth;
     const innerH = height - margin.top - margin.bottom;
 
-    const vals = rows.flatMap((r) => [r.p05, r.p95, r.growth]);
-    vals.push(0);
-    if (businessGrowth != null) vals.push(businessGrowth);
-    const lo = Math.min(...vals);
-    const hi = Math.max(...vals);
+    // Fit the bulk of stores; anything beyond is clamped to the edge and flagged
+    const fixed = [0, businessGrowth ?? 0];
+    const lo = Math.min(
+      quantile(rows.flatMap((r) => [r.p05, r.growth]), OFF_SCALE_SHARE),
+      ...fixed,
+    );
+    const hi = Math.max(
+      quantile(rows.flatMap((r) => [r.p95, r.growth]), 1 - OFF_SCALE_SHARE),
+      ...fixed,
+    );
     const tick = niceStep(Math.max(hi - lo, 1) / 6);
     const yMin = Math.floor(lo / tick) * tick;
     const yMax = Math.ceil(hi / tick) * tick;
-    const y = (v) =>
-      margin.top + innerH - ((v - yMin) / (yMax - yMin || 1)) * innerH;
+    const y = (v) => {
+      const c = Math.min(yMax, Math.max(yMin, v));
+      return margin.top + innerH - ((c - yMin) / (yMax - yMin || 1)) * innerH;
+    };
+    const offScale = (r) => ({
+      above: r.p95 > yMax || r.growth > yMax,
+      below: r.p05 < yMin || r.growth < yMin,
+    });
+    const offScaleCount = rows.filter((r) => {
+      const o = offScale(r);
+      return o.above || o.below;
+    }).length;
     const ticks = [];
     for (let v = yMin; v <= yMax + tick / 2; v += tick) ticks.push(v);
 
-    return { margin, step, width, innerH, y, ticks };
+    return { margin, step, width, innerH, y, ticks, offScale, offScaleCount };
   }, [rows, businessGrowth, wide, containerWidth, height]);
 
-  const { margin, step, width, innerH, y, ticks } = geo;
+  const { margin, step, width, innerH, y, ticks, offScale, offScaleCount } =
+    geo;
   const xOf = (i) => margin.left + (i + 0.5) * step;
 
   // Boxes don't depend on hover, so mousemove doesn't redraw ~400 of them
@@ -74,8 +101,22 @@ export default function StoreSpreadChart({
     return rows.map((r, i) => {
       const cx = margin.left + (i + 0.5) * step;
       const color = growthColor(r.growth);
+      const off = offScale(r);
+      const mark = Math.max(3, Math.min(5, step / 2));
       return (
         <g key={r.STORE_ID}>
+          {off.above && (
+            <polygon
+              points={`${cx - mark},${margin.top + mark} ${cx + mark},${margin.top + mark} ${cx},${margin.top - 1}`}
+              fill={color}
+            />
+          )}
+          {off.below && (
+            <polygon
+              points={`${cx - mark},${margin.top + innerH - mark} ${cx + mark},${margin.top + innerH - mark} ${cx},${margin.top + innerH + 1}`}
+              fill={color}
+            />
+          )}
           <line
             x1={cx}
             x2={cx}
@@ -116,7 +157,7 @@ export default function StoreSpreadChart({
         </g>
       );
     });
-  }, [rows, step, margin, y]);
+  }, [rows, step, margin, y, innerH, offScale]);
 
   const handleMove = (e) => {
     const rect = e.currentTarget.ownerSVGElement.getBoundingClientRect();
@@ -199,6 +240,22 @@ export default function StoreSpreadChart({
         />
 
         {boxes}
+
+        {offScaleCount > 0 && (
+          <text
+            x={margin.left + 6}
+            y={margin.top + 12}
+            fill={C.muted}
+            fontSize={10}
+            fontFamily="'DM Mono', monospace"
+            stroke={C.card}
+            strokeWidth={3}
+            paintOrder="stroke"
+          >
+            ▲▼ {offScaleCount} store{offScaleCount === 1 ? "" : "s"} beyond
+            the scale, hover for values
+          </text>
+        )}
 
         {/* Whole-business % change */}
         {businessGrowth != null && (
@@ -336,6 +393,12 @@ export default function StoreSpreadChart({
             <span style={{ color: C.textSub }}>Comparable {unit}</span>
             <span>{hovered.n}</span>
           </div>
+          {(offScale(hovered).above || offScale(hovered).below) && (
+            <div style={{ color: C.gold, fontSize: 10, marginTop: 8 }}>
+              Extends beyond the chart scale. Very low PY sales (e.g. new,
+              refitted or reopened store) can produce extreme %s.
+            </div>
+          )}
           <div style={{ color: C.muted, fontSize: 10, marginTop: 8 }}>
             Click to {hovered.STORE_ID === selectedStoreId ? "close" : "open"}{" "}
             store detail
