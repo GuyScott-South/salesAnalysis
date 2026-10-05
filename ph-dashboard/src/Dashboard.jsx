@@ -806,6 +806,8 @@ export default function Dashboard() {
   const storeSearchRef = useRef(null);
   const [filterWeek, setFilterWeek] = useState([]);
   const [availableWeeks, setAvailableWeeks] = useState([]);
+  const [filterDay, setFilterDay] = useState([]);
+  const [availableDays, setAvailableDays] = useState([]);
 
   // Data
   const [kpis, setKpis] = useState(null);
@@ -925,6 +927,7 @@ export default function Dashboard() {
     storeId,
     week,
     business,
+    day,
   ) {
     const inList = (vals) =>
       vals.map((v) => `'${v.replace(/'/g, "''")}'`).join(",");
@@ -941,6 +944,7 @@ export default function Dashboard() {
       conds.push(
         `DATE_TRUNC('week', BUSINESS_DATE)::VARCHAR IN (${inList(week)})`,
       );
+    if (day.length > 0) conds.push(`DAYNAME IN (${inList(day)})`);
     return conds.length ? "WHERE " + conds.join(" AND ") : "";
   }
 
@@ -1070,6 +1074,7 @@ export default function Dashboard() {
         selectedStoreFilter?.STORE_ID,
         filterWeek,
         filterBusiness,
+        filterDay,
       );
       setLoading(true);
       try {
@@ -1079,6 +1084,13 @@ export default function Dashboard() {
         );
         if (cancelled) return;
         setAvailableWeeks(weeks.map((r) => r.wc));
+
+        // Available days, Monday first
+        const days = await runQ(
+          `SELECT DAYNAME FROM sales WHERE DAYNAME IS NOT NULL GROUP BY DAYNAME ORDER BY MIN(ISODOW(BUSINESS_DATE))`,
+        );
+        if (cancelled) return;
+        setAvailableDays(days.map((r) => r.DAYNAME));
         const [kpiRow] = await runQ(`
           SELECT COUNT(*) AS total_stores, SUM(cy) AS total_cy, SUM(py1) AS total_py1, SUM(py2) AS total_py2,
             COUNT(DISTINCT FRANCHISE) AS total_franchises,
@@ -1161,6 +1173,7 @@ export default function Dashboard() {
           selectedStoreFilter?.STORE_ID,
           filterWeek,
           filterBusiness,
+          filterDay,
         );
         const franchisees = await runQ(`
           WITH store_agg AS (
@@ -1203,7 +1216,7 @@ export default function Dashboard() {
             SELECT DATE_TRUNC('week', BUSINESS_DATE) AS week_start
             FROM sales ${w}
             GROUP BY DATE_TRUNC('week', BUSINESS_DATE)
-            HAVING COUNT(DISTINCT DAYNAME) = 7
+            HAVING COUNT(DISTINCT DAYNAME) = ${filterDay.length || 7}
           ),
           weekly_stats AS (
             SELECT sw.week_start, COUNT(*) AS store_count,
@@ -1256,6 +1269,7 @@ export default function Dashboard() {
     selectedStoreFilter,
     filterWeek,
     filterBusiness,
+    filterDay,
   ]);
 
   const fetchStoreDetail = useCallback(
@@ -1683,6 +1697,12 @@ export default function Dashboard() {
             }
           />
           <MultiSelect
+            label="Day"
+            selected={filterDay}
+            onChange={setFilterDay}
+            opts={availableDays}
+          />
+          <MultiSelect
             label="Franchisee"
             selected={filterFranchise}
             onChange={setFilterFranchise}
@@ -1718,6 +1738,7 @@ export default function Dashboard() {
             filterStatus.length > 0 ||
             filterWeek.length > 0 ||
             filterBusiness.length > 0 ||
+            filterDay.length > 0 ||
             selectedStoreFilter) && (
             <button
               onClick={() => {
@@ -1727,6 +1748,7 @@ export default function Dashboard() {
                 setFilterStatus([]);
                 setFilterWeek([]);
                 setFilterBusiness([]);
+                setFilterDay([]);
                 setSelectedStoreFilter(null);
                 setStoreSearch("");
                 setStoreOptions([]);
@@ -3274,7 +3296,7 @@ export default function Dashboard() {
                                     }}
                                   >
                                     {diff !== 0
-                                      ? `${diff >= 0 ? "+" : ""}${metricMode === "transactions" ? "" : "£"}${(Math.abs(diff) / 1000).toFixed(1)}k`
+                                      ? `${diff >= 0 ? "+" : "-"}${metricMode === "transactions" ? "" : "£"}${(Math.abs(diff) / 1000).toFixed(1)}k`
                                       : "—"}
                                   </div>
                                 </div>
@@ -3368,9 +3390,15 @@ export default function Dashboard() {
                 style={{ height: "100%", width: "100%" }}
                 scrollWheelZoom={true}
               >
+                {/* Esri Dark Gray Canvas (keyless). CARTO basemaps now require an API key. */}
                 <TileLayer
-                  attribution="&copy; OpenStreetMap contributors"
-                  url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                  attribution="Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors"
+                  url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+                  maxZoom={16}
+                />
+                <TileLayer
+                  url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
+                  maxZoom={16}
                 />
                 {geoData
                   .filter((s) => {
