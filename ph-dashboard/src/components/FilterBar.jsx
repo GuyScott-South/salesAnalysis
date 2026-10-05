@@ -1,6 +1,7 @@
 import { C, DAYPART_ORDER } from "../theme";
 import MultiSelect from "./MultiSelect";
 import StoreSearch from "./StoreSearch";
+import SegmentedToggle from "./SegmentedToggle";
 
 export default function FilterBar({
   filters,
@@ -117,43 +118,15 @@ export default function FilterBar({
             Querying…
           </span>
         )}
-        <div
-          style={{
-            marginLeft: "auto",
-            display: "flex",
-            background: C.card,
-            border: `1px solid ${C.border}`,
-            borderRadius: 6,
-            padding: 3,
-            gap: 3,
-          }}
-        >
-          {[
-            { mode: "sales", label: "£ Sales" },
-            { mode: "transactions", label: "# Txns" },
-          ].map(({ mode, label }) => (
-            <button
-              key={mode}
-              onClick={() => onMetricModeChange(mode)}
-              style={{
-                background: metricMode === mode ? C.accent : "transparent",
-                color: metricMode === mode ? "#fff" : C.muted,
-                border: "none",
-                borderRadius: 4,
-                padding: "4px 12px",
-                cursor: "pointer",
-                fontSize: 11,
-                fontFamily: "'DM Mono', monospace",
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-                transition: "all 0.15s",
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <SegmentedToggle
+          options={[
+            { value: "sales", label: "£ Sales" },
+            { value: "transactions", label: "# Txns" },
+          ]}
+          value={metricMode}
+          onChange={onMetricModeChange}
+          style={{ marginLeft: "auto" }}
+        />
       </div>
     </div>
   );
