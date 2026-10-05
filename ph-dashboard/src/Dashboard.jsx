@@ -106,6 +106,41 @@ const fmtPct = (v) =>
 const growthColor = (v) =>
   v > 5 ? C.teal : v > 0 ? "#86EFAC" : v > -5 ? C.gold : C.accent;
 
+// ─── SQL helpers ────────────────────────────────────────────────────────────
+const sqlStr = (v) => `'${String(v).replace(/'/g, "''")}'`;
+
+function buildWhere(
+  franchise,
+  channel,
+  daypart,
+  status,
+  storeId,
+  week,
+  business,
+  day,
+) {
+  const inList = (vals) => vals.map(sqlStr).join(",");
+  const conds = [];
+  if (franchise.length > 0) conds.push(`FRANCHISE IN (${inList(franchise)})`);
+  if (channel.length > 0) conds.push(`CHANNEL IN (${inList(channel)})`);
+  if (daypart.length > 0) conds.push(`DAY_PART IN (${inList(daypart)})`);
+  if (status.length > 0)
+    conds.push(`AIS_STORE_STATUS IN (${inList(status)})`);
+  if (business.length > 0)
+    conds.push(`CHANNEL_TYPE IN (${inList(business)})`);
+  if (storeId) conds.push(`STORE_ID=${sqlStr(storeId)}`);
+  if (week.length > 0)
+    conds.push(
+      `DATE_TRUNC('week', BUSINESS_DATE)::VARCHAR IN (${inList(week)})`,
+    );
+  if (day.length > 0) conds.push(`DAYNAME IN (${inList(day)})`);
+  return conds.length ? "WHERE " + conds.join(" AND ") : "";
+}
+
+// Adds a condition to a clause returned by buildWhere
+const andWhere = (where, cond) =>
+  where ? `${where} AND ${cond}` : `WHERE ${cond}`;
+
 // ─── Components ─────────────────────────────────────────────────────────────
 function KPI({ label, value, sub, color }) {
   return (
@@ -806,6 +841,8 @@ export default function Dashboard() {
   const storeSearchRef = useRef(null);
   const [filterWeek, setFilterWeek] = useState([]);
   const [availableWeeks, setAvailableWeeks] = useState([]);
+  const [filterDay, setFilterDay] = useState([]);
+  const [availableDays, setAvailableDays] = useState([]);
 
   // Data
   const [kpis, setKpis] = useState(null);
@@ -817,7 +854,7 @@ export default function Dashboard() {
   const [channels, setChannels] = useState([]);
   const [businessTypes, setBusinessTypes] = useState([]);
   const [storeChannelMap, setStoreChannelMap] = useState({});
-  const [selectedStore, setSelectedStore] = useState(null);
+  const [selectedStoreId, setSelectedStoreId] = useState(null);
   const [storeDetail, setStoreDetail] = useState(null);
   const [weeklyData, setWeeklyData] = useState([]);
   const [daypartHeatmapData, setDaypartHeatmapData] = useState([]);
@@ -850,12 +887,12 @@ export default function Dashboard() {
       setLoading(true);
       setError(null);
       try {
-        const text = await file.text();
-        const blob = new Blob([text], { type: "text/csv" });
+        // Register the File itself so DuckDB reads it in chunks rather than
+        // holding the whole CSV as a JS string
         await db.registerFileHandle(
           "sales.csv",
-          blob,
-          2 /* BROWSER_BUFFER */,
+          file,
+          2 /* BROWSER_FILEREADER */,
           true,
         );
         await conn.query(`DROP TABLE IF EXISTS sales`);
@@ -916,33 +953,6 @@ export default function Dashboard() {
     },
     [db, conn],
   );
-
-  function buildWhere(
-    franchise,
-    channel,
-    daypart,
-    status,
-    storeId,
-    week,
-    business,
-  ) {
-    const inList = (vals) =>
-      vals.map((v) => `'${v.replace(/'/g, "''")}'`).join(",");
-    const conds = [];
-    if (franchise.length > 0) conds.push(`FRANCHISE IN (${inList(franchise)})`);
-    if (channel.length > 0) conds.push(`CHANNEL IN (${inList(channel)})`);
-    if (daypart.length > 0) conds.push(`DAY_PART IN (${inList(daypart)})`);
-    if (status.length > 0)
-      conds.push(`AIS_STORE_STATUS IN (${inList(status)})`);
-    if (business.length > 0)
-      conds.push(`CHANNEL_TYPE IN (${inList(business)})`);
-    if (storeId) conds.push(`STORE_ID='${storeId.replace(/'/g, "''")}'`);
-    if (week.length > 0)
-      conds.push(
-        `DATE_TRUNC('week', BUSINESS_DATE)::VARCHAR IN (${inList(week)})`,
-      );
-    return conds.length ? "WHERE " + conds.join(" AND ") : "";
-  }
 
   // Helper to run a query and return plain JS objects
   const runQ = useCallback(
@@ -1053,44 +1063,51 @@ export default function Dashboard() {
     };
   }, [view, geoData, geocodePostcodes]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Refresh data whenever filters, sorting, or db readiness change
+  // WHERE clause for the current filter selection
+  const storeFilterId = selectedStoreFilter?.STORE_ID;
+  const where = useMemo(
+    () =>
+      buildWhere(
+        filterFranchise,
+        filterChannel,
+        filterDaypart,
+        filterStatus,
+        storeFilterId,
+        filterWeek,
+        filterBusiness,
+        filterDay,
+      ),
+    [
+      filterFranchise,
+      filterChannel,
+      filterDaypart,
+      filterStatus,
+      storeFilterId,
+      filterWeek,
+      filterBusiness,
+      filterDay,
+    ],
+  );
+
+  // Filter dropdown options (unfiltered, so only reloaded with a new CSV)
   useEffect(() => {
     if (!conn || !dbReady) return;
     let cancelled = false;
 
     (async () => {
-      const cy = metricMode === "transactions" ? "TXN_CY" : "CY";
-      const py1 = metricMode === "transactions" ? "TXN_PY1" : "PY1";
-      const py2 = metricMode === "transactions" ? "TXN_PY2" : "PY2";
-      const w = buildWhere(
-        filterFranchise,
-        filterChannel,
-        filterDaypart,
-        filterStatus,
-        selectedStoreFilter?.STORE_ID,
-        filterWeek,
-        filterBusiness,
-      );
-      setLoading(true);
       try {
-        // Available weeks (unfiltered so dropdown always shows all)
         const weeks = await runQ(
           `SELECT DISTINCT DATE_TRUNC('week', BUSINESS_DATE)::VARCHAR AS wc FROM sales ORDER BY wc DESC`,
         );
         if (cancelled) return;
         setAvailableWeeks(weeks.map((r) => r.wc));
-        const [kpiRow] = await runQ(`
-          SELECT COUNT(*) AS total_stores, SUM(cy) AS total_cy, SUM(py1) AS total_py1, SUM(py2) AS total_py2,
-            COUNT(DISTINCT FRANCHISE) AS total_franchises,
-            COUNT(CASE WHEN cy > 0 THEN 1 END) AS active_stores,
-            COUNT(CASE WHEN cy < py1 AND py1 > 0 THEN 1 END) AS declining_stores,
-            COUNT(CASE WHEN cy > py1 AND py1 > 0 THEN 1 END) AS growing_stores
-          FROM (
-            SELECT STORE_ID, FRANCHISE, SUM(${cy}) AS cy, SUM(${py1}) AS py1, SUM(${py2}) AS py2
-            FROM sales ${w} GROUP BY STORE_ID, FRANCHISE
-          ) agg`);
+
+        // Monday first
+        const days = await runQ(
+          `SELECT DAYNAME FROM sales WHERE DAYNAME IS NOT NULL GROUP BY DAYNAME ORDER BY MIN(ISODOW(BUSINESS_DATE))`,
+        );
         if (cancelled) return;
-        setKpis(kpiRow);
+        setAvailableDays(days.map((r) => r.DAYNAME));
 
         const flist = await runQ(
           `SELECT DISTINCT FRANCHISE FROM sales ORDER BY FRANCHISE`,
@@ -1109,6 +1126,40 @@ export default function Dashboard() {
         );
         if (cancelled) return;
         setBusinessTypes(btlist.map((r) => r.CHANNEL_TYPE));
+      } catch (e) {
+        if (!cancelled) setError("Query error: " + e.message);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conn, dbReady, runQ]);
+
+  // Refresh data whenever filters, sorting, or db readiness change
+  useEffect(() => {
+    if (!conn || !dbReady) return;
+    let cancelled = false;
+
+    (async () => {
+      const cy = metricMode === "transactions" ? "TXN_CY" : "CY";
+      const py1 = metricMode === "transactions" ? "TXN_PY1" : "PY1";
+      const py2 = metricMode === "transactions" ? "TXN_PY2" : "PY2";
+      const w = where;
+      setLoading(true);
+      try {
+        const [kpiRow] = await runQ(`
+          SELECT COUNT(*) AS total_stores, SUM(cy) AS total_cy, SUM(py1) AS total_py1, SUM(py2) AS total_py2,
+            COUNT(DISTINCT FRANCHISE) AS total_franchises,
+            COUNT(CASE WHEN cy > 0 THEN 1 END) AS active_stores,
+            COUNT(CASE WHEN cy < py1 AND py1 > 0 THEN 1 END) AS declining_stores,
+            COUNT(CASE WHEN cy > py1 AND py1 > 0 THEN 1 END) AS growing_stores
+          FROM (
+            SELECT STORE_ID, FRANCHISE, SUM(${cy}) AS cy, SUM(${py1}) AS py1, SUM(${py2}) AS py2
+            FROM sales ${w} GROUP BY STORE_ID, FRANCHISE
+          ) agg`);
+        if (cancelled) return;
+        setKpis(kpiRow);
 
         const cdata = await runQ(
           `SELECT CHANNEL, SUM(${cy}) AS cy, SUM(${py1}) AS py1, SUM(${py2}) AS py2 FROM sales ${w} GROUP BY CHANNEL ORDER BY cy DESC`,
@@ -1158,9 +1209,10 @@ export default function Dashboard() {
           filterChannel,
           filterDaypart,
           filterStatus,
-          selectedStoreFilter?.STORE_ID,
+          storeFilterId,
           filterWeek,
           filterBusiness,
+          filterDay,
         );
         const franchisees = await runQ(`
           WITH store_agg AS (
@@ -1203,7 +1255,7 @@ export default function Dashboard() {
             SELECT DATE_TRUNC('week', BUSINESS_DATE) AS week_start
             FROM sales ${w}
             GROUP BY DATE_TRUNC('week', BUSINESS_DATE)
-            HAVING COUNT(DISTINCT DAYNAME) = 7
+            HAVING COUNT(DISTINCT DAYNAME) = ${filterDay.length || 7}
           ),
           weekly_stats AS (
             SELECT sw.week_start, COUNT(*) AS store_count,
@@ -1249,13 +1301,14 @@ export default function Dashboard() {
     dbReady,
     runQ,
     metricMode,
-    filterFranchise,
+    where,
     filterChannel,
     filterDaypart,
     filterStatus,
-    selectedStoreFilter,
+    storeFilterId,
     filterWeek,
     filterBusiness,
+    filterDay,
   ]);
 
   const fetchStoreDetail = useCallback(
@@ -1263,13 +1316,15 @@ export default function Dashboard() {
       if (!conn || !dbReady) return null;
       const cy = metricMode === "transactions" ? "TXN_CY" : "CY";
       const py1 = metricMode === "transactions" ? "TXN_PY1" : "PY1";
+      // Same filters as the rest of the dashboard, narrowed to this store
+      const sw = andWhere(where, `STORE_ID=${sqlStr(storeId)}`);
       const channelBreakdown = await runQ(`
       SELECT CHANNEL, SUM(${cy}) AS cy, SUM(${py1}) AS py1
-      FROM sales WHERE STORE_ID='${storeId}' GROUP BY CHANNEL ORDER BY cy DESC
+      FROM sales ${sw} GROUP BY CHANNEL ORDER BY cy DESC
     `);
       const daypartBreakdown = await runQ(`
       SELECT DAY_PART, SUM(${cy}) AS cy, SUM(${py1}) AS py1
-      FROM sales WHERE STORE_ID='${storeId}' GROUP BY DAY_PART
+      FROM sales ${sw} GROUP BY DAY_PART
     `);
       const dpOrdered = DAYPART_ORDER.map(
         (d) =>
@@ -1281,13 +1336,13 @@ export default function Dashboard() {
       );
       return { channelBreakdown, daypartBreakdown: dpOrdered };
     },
-    [conn, dbReady, runQ, metricMode],
+    [conn, dbReady, runQ, metricMode, where],
   );
 
   useEffect(() => {
     let cancelled = false;
-    const promise = selectedStore
-      ? fetchStoreDetail(selectedStore.STORE_ID)
+    const promise = selectedStoreId
+      ? fetchStoreDetail(selectedStoreId)
       : Promise.resolve(null);
     promise.then((detail) => {
       if (!cancelled) setStoreDetail(detail);
@@ -1295,7 +1350,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [selectedStore, fetchStoreDetail]);
+  }, [selectedStoreId, fetchStoreDetail]);
 
   // ── Drop zone ──────────────────────────────────────────────────────────────
   const handleDrop = useCallback(
@@ -1339,10 +1394,6 @@ export default function Dashboard() {
           fontFamily: "'Syne', sans-serif",
         }}
       >
-        <link
-          href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap"
-          rel="stylesheet"
-        />
         <div style={{ textAlign: "center", maxWidth: 500, padding: 32 }}>
           <div style={{ marginBottom: 8 }}>
             <img src="/logo.png" alt="Logo" style={{ height: 48 }} />
@@ -1411,6 +1462,23 @@ export default function Dashboard() {
   const metricLabel = metricMode === "transactions" ? "Transactions" : "Sales";
   const fmtVal = metricMode === "transactions" ? fmtTxn : fmt;
 
+  // Look the selected store up in the current rows so its figures follow the filters
+  const selectedStore =
+    storeRows.find((s) => s.STORE_ID === selectedStoreId) ?? null;
+
+  const resetFilters = () => {
+    setFilterFranchise([]);
+    setFilterChannel([]);
+    setFilterDaypart([]);
+    setFilterStatus([]);
+    setFilterWeek([]);
+    setFilterBusiness([]);
+    setFilterDay([]);
+    setSelectedStoreFilter(null);
+    setStoreSearch("");
+    setStoreOptions([]);
+  };
+
   // ── Main Dashboard ─────────────────────────────────────────────────────────
   const navItems = [
     { id: "overview", label: "Overview" },
@@ -1439,10 +1507,6 @@ export default function Dashboard() {
         fontFamily: "'Syne', sans-serif",
       }}
     >
-      <link
-        href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap"
-        rel="stylesheet"
-      />
 
       {/* Header */}
       <div
@@ -1517,6 +1581,9 @@ export default function Dashboard() {
                 setDbReady(false);
                 setFileName(null);
                 setKpis(null);
+                // Previous file's selections may not exist in the next one
+                resetFilters();
+                setSelectedStoreId(null);
               }}
               style={{
                 background: "transparent",
@@ -1683,6 +1750,12 @@ export default function Dashboard() {
             }
           />
           <MultiSelect
+            label="Day"
+            selected={filterDay}
+            onChange={setFilterDay}
+            opts={availableDays}
+          />
+          <MultiSelect
             label="Franchisee"
             selected={filterFranchise}
             onChange={setFilterFranchise}
@@ -1718,19 +1791,10 @@ export default function Dashboard() {
             filterStatus.length > 0 ||
             filterWeek.length > 0 ||
             filterBusiness.length > 0 ||
+            filterDay.length > 0 ||
             selectedStoreFilter) && (
             <button
-              onClick={() => {
-                setFilterFranchise([]);
-                setFilterChannel([]);
-                setFilterDaypart([]);
-                setFilterStatus([]);
-                setFilterWeek([]);
-                setFilterBusiness([]);
-                setSelectedStoreFilter(null);
-                setStoreSearch("");
-                setStoreOptions([]);
-              }}
+              onClick={resetFilters}
               style={{
                 background: C.accent + "22",
                 border: `1px solid ${C.accent}44`,
@@ -2033,7 +2097,7 @@ export default function Dashboard() {
                       .map((s, i) => (
                         <tr
                           key={`${s.STORE_ID}-${s.FRANCHISE}`}
-                          onClick={() => setSelectedStore(s)}
+                          onClick={() => setSelectedStoreId(s.STORE_ID)}
                           style={{
                             cursor: "pointer",
                             borderTop: `1px solid ${C.border}`,
@@ -2097,7 +2161,7 @@ export default function Dashboard() {
                     {decliningStores.slice(0, 10).map((s) => (
                       <tr
                         key={`${s.STORE_ID}-${s.FRANCHISE}`}
-                        onClick={() => setSelectedStore(s)}
+                        onClick={() => setSelectedStoreId(s.STORE_ID)}
                         style={{
                           cursor: "pointer",
                           borderTop: `1px solid ${C.border}`,
@@ -2237,7 +2301,9 @@ export default function Dashboard() {
                     <tr
                       key={`${s.STORE_ID}-${s.FRANCHISE}`}
                       onClick={() =>
-                        setSelectedStore(s === selectedStore ? null : s)
+                        setSelectedStoreId(
+                          s.STORE_ID === selectedStoreId ? null : s.STORE_ID,
+                        )
                       }
                       style={{
                         borderTop: `1px solid ${C.border}`,
@@ -2386,7 +2452,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <button
-                    onClick={() => setSelectedStore(null)}
+                    onClick={() => setSelectedStoreId(null)}
                     style={{
                       background: "transparent",
                       border: "none",
@@ -3274,7 +3340,7 @@ export default function Dashboard() {
                                     }}
                                   >
                                     {diff !== 0
-                                      ? `${diff >= 0 ? "+" : ""}${metricMode === "transactions" ? "" : "£"}${(Math.abs(diff) / 1000).toFixed(1)}k`
+                                      ? `${diff >= 0 ? "+" : "-"}${metricMode === "transactions" ? "" : "£"}${(Math.abs(diff) / 1000).toFixed(1)}k`
                                       : "—"}
                                   </div>
                                 </div>
@@ -3368,9 +3434,15 @@ export default function Dashboard() {
                 style={{ height: "100%", width: "100%" }}
                 scrollWheelZoom={true}
               >
+                {/* Esri Dark Gray Canvas (keyless). CARTO basemaps now require an API key. */}
                 <TileLayer
-                  attribution="&copy; OpenStreetMap contributors"
-                  url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                  attribution="Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors"
+                  url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+                  maxZoom={16}
+                />
+                <TileLayer
+                  url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
+                  maxZoom={16}
                 />
                 {geoData
                   .filter((s) => {

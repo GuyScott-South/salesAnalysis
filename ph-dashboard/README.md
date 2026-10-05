@@ -1,16 +1,35 @@
-# React + Vite
+# PH UK Performance dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Browser-only sales dashboard. Drop a sales CSV on the start screen and it is
+loaded into [DuckDB-WASM](https://duckdb.org/docs/api/wasm/overview) in the
+browser; every chart and table is a SQL query against that in-memory table.
+No data leaves the browser apart from store postcodes, which are sent to
+[postcodes.io](https://postcodes.io) to place stores on the Geography map.
 
-Currently, two official plugins are available:
+Live at https://sales-dashboard.scott-south.com/ (Cloudflare Workers static assets).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## CSV columns
 
-## React Compiler
+`BUSINESS_DATE`, `DAYNAME`, `STORE_ID`, `STORE_NAME`, `FRANCHISE`, `POSTAL_CODE`,
+`AIS_STORE_STATUS`, `CHANNEL`, `CHANNEL_TYPE`, `DAY_PART`,
+`CY_NET_SALES_BASE`, `PY_1_NET_SALES_BASE`, `PY_2_NET_SALES_BASE`,
+`CY_TRANSACTION_CNT`, `PY_1_TRANSACTION_CNT`, `PY_2_TRANSACTION_CNT`
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Raw channel codes are normalised on load (see `loadCSV` in `src/Dashboard.jsx`),
+and each store is attributed to its most recent franchisee.
 
-## Expanding the ESLint configuration
+## Development
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm install
+npm run dev      # Vite dev server
+npm run lint
+npm run build
+npm run deploy   # build + wrangler deploy
+```
+
+## Third-party services
+
+- DuckDB-WASM is loaded at runtime from jsDelivr.
+- Map tiles: Esri Dark Gray Canvas (no key required).
+- Geocoding: postcodes.io (no key required).
