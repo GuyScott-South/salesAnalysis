@@ -18,6 +18,19 @@ Live at https://sales-dashboard.scott-south.com/ (Cloudflare Workers static asse
 Raw channel codes are normalised on load (see `loadCSV` in `src/Dashboard.jsx`),
 and each store is attributed to its most recent franchisee.
 
+## Project layout
+
+```
+src/
+  Dashboard.jsx      container: wires hooks to the header, filter bar and active view
+  theme.js           colours, channel colours, daypart order
+  hooks/             useSalesDb (DuckDB + CSV load), useFilters, useFilterOptions,
+                     useDashboardData (all aggregate queries), useStoreDetail, useGeocoding
+  views/             one component per tab (Overview, Stores, Franchisees, ...)
+  components/        Header, FilterBar, StoreSearch, UploadScreen and shared UI pieces
+  lib/               formatting, SQL helpers, DuckDB loader, store classification
+```
+
 ## Development
 
 ```bash
