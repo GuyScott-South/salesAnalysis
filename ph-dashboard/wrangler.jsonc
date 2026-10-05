@@ -1,6 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "sales-dashboard",
+  // Guy Scott-South Personal (the login can also see the Pizza Hut UK account)
+  "account_id": "28189ba21d161aaa841040d17287990d",
   "compatibility_date": "2026-04-21",
   "observability": {
     "enabled": true
