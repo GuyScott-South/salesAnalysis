@@ -1,19 +1,9 @@
 import { useState, useMemo } from "react";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-} from "recharts";
-import { C, CHANNEL_COLORS } from "../theme";
-import { fmtPct, growthColor, metricHelpers } from "../lib/format";
+import { C } from "../theme";
+import { metricHelpers } from "../lib/format";
 import { Badge, GrowthPill } from "../components/Badge";
-import KPI from "../components/KPI";
 import SectionHeader from "../components/SectionHeader";
+import StoreDetailPanel from "../components/StoreDetailPanel";
 import ChannelMixBar from "../components/ChannelMixBar";
 
 export default function StoresView({
@@ -242,193 +232,13 @@ export default function StoresView({
         </table>
       </div>
 
-      {/* Store Detail Drawer */}
       {selectedStore && storeDetail && (
-        <div
-          style={{
-            marginTop: 20,
-            background: C.card,
-            border: `1px solid ${C.accent}44`,
-            borderRadius: 12,
-            padding: 24,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-              marginBottom: 20,
-            }}
-          >
-            <div>
-              <h3 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>
-                {selectedStore.STORE_NAME}
-                <span
-                  style={{
-                    color: C.muted,
-                    fontWeight: 400,
-                    fontSize: 14,
-                    marginLeft: 10,
-                  }}
-                >
-                  #{selectedStore.STORE_ID}
-                </span>
-              </h3>
-              <p style={{ margin: "4px 0 0", color: C.textSub }}>
-                {selectedStore.FRANCHISE}
-              </p>
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <Badge
-                  label={selectedStore.AIS_STORE_STATUS}
-                  color={
-                    selectedStore.AIS_STORE_STATUS === "Open"
-                      ? "#22C55E"
-                      : C.accent
-                  }
-                />
-                <Badge
-                  label={selectedStore.CHANNEL_TYPE}
-                  color={C.gold}
-                />
-              </div>
-            </div>
-            <button
-              onClick={() => onSelectStore(null)}
-              style={{
-                background: "transparent",
-                border: "none",
-                color: C.muted,
-                cursor: "pointer",
-                fontSize: 20,
-              }}
-            >
-              ×
-            </button>
-          </div>
-          <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
-            <KPI
-              label={`CY ${metricLabel}`}
-              value={fmtVal(selectedStore.cy, 2)}
-              color={C.teal}
-            />
-            <KPI label={`PY1 ${metricLabel}`} value={fmtVal(selectedStore.py1, 2)} />
-            <KPI label={`PY2 ${metricLabel}`} value={fmtVal(selectedStore.py2, 2)} />
-            <KPI
-              label="vs PY1"
-              value={fmtPct(selectedStore.growth_py1)}
-              color={growthColor(selectedStore.growth_py1)}
-            />
-            <KPI
-              label="vs PY2"
-              value={fmtPct(selectedStore.growth_py2)}
-              color={growthColor(selectedStore.growth_py2)}
-            />
-          </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 20,
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  color: C.muted,
-                  fontSize: 11,
-                  fontFamily: "'DM Mono', monospace",
-                  marginBottom: 10,
-                  textTransform: "uppercase",
-                }}
-              >
-                Channel Breakdown
-              </div>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={storeDetail.channelBreakdown}>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke={C.border}
-                    vertical={false}
-                  />
-                  <XAxis
-                    dataKey="CHANNEL"
-                    tick={{ fill: C.muted, fontSize: 9 }}
-                  />
-                  <YAxis tick={{ fill: C.muted, fontSize: 9 }} />
-                  <Tooltip
-                    contentStyle={{
-                      background: C.surface,
-                      border: `1px solid ${C.border}`,
-                      fontSize: 11,
-                    }}
-                    formatter={(v) => fmtVal(v, 2)}
-                  />
-                  <Bar
-                    dataKey="cy"
-                    name="CY"
-                    fill={C.teal}
-                    radius={[3, 3, 0, 0]}
-                  >
-                    {storeDetail.channelBreakdown.map((d) => (
-                      <Cell
-                        key={d.CHANNEL}
-                        fill={CHANNEL_COLORS[d.CHANNEL] || C.muted}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div>
-              <div
-                style={{
-                  color: C.muted,
-                  fontSize: 11,
-                  fontFamily: "'DM Mono', monospace",
-                  marginBottom: 10,
-                  textTransform: "uppercase",
-                }}
-              >
-                Daypart Breakdown
-              </div>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={storeDetail.daypartBreakdown}>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke={C.border}
-                    vertical={false}
-                  />
-                  <XAxis
-                    dataKey="DAY_PART"
-                    tick={{ fill: C.muted, fontSize: 8 }}
-                  />
-                  <YAxis tick={{ fill: C.muted, fontSize: 9 }} />
-                  <Tooltip
-                    contentStyle={{
-                      background: C.surface,
-                      border: `1px solid ${C.border}`,
-                      fontSize: 11,
-                    }}
-                    formatter={(v) => fmtVal(v, 2)}
-                  />
-                  <Bar
-                    dataKey="cy"
-                    name="CY"
-                    fill={C.gold}
-                    radius={[3, 3, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="py1"
-                    name="PY1"
-                    fill="#6B7280"
-                    radius={[3, 3, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
+        <StoreDetailPanel
+          store={selectedStore}
+          detail={storeDetail}
+          metricMode={metricMode}
+          onClose={() => onSelectStore(null)}
+        />
       )}
     </div>
   );

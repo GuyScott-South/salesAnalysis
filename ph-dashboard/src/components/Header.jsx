@@ -6,6 +6,7 @@ const NAV_ITEMS = [
   { id: "franchisees", label: "Franchisees" },
   { id: "opportunities", label: "Opportunities" },
   { id: "weekly", label: "Weekly" },
+  { id: "spread", label: "Store Spread" },
   { id: "daypart", label: "Daypart" },
   { id: "geography", label: "Geography" },
 ];

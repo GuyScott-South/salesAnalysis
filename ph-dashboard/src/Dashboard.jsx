@@ -15,6 +15,7 @@ import StoresView from "./views/StoresView";
 import FranchiseesView from "./views/FranchiseesView";
 import OpportunitiesView from "./views/OpportunitiesView";
 import WeeklyView from "./views/WeeklyView";
+import StoreSpreadView from "./views/StoreSpreadView";
 import DaypartView from "./views/DaypartView";
 import GeographyView from "./views/GeographyView";
 
@@ -136,6 +137,19 @@ export default function Dashboard() {
         )}
         {view === "weekly" && (
           <WeeklyView weeklyData={data.weeklyData} metricMode={metricMode} />
+        )}
+        {view === "spread" && (
+          <StoreSpreadView
+            runQ={runQ}
+            ready={ready}
+            where={where}
+            metricMode={metricMode}
+            kpis={data.kpis}
+            storeRows={data.storeRows}
+            storeDetail={storeDetail}
+            selectedStoreId={selectedStoreId}
+            onSelectStore={setSelectedStoreId}
+          />
         )}
         {view === "daypart" && (
           <DaypartView
